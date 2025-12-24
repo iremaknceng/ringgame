@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Ring Gap Game (Background)</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<script>
+/* =========================
+   BACKGROUND IMAGE
+========================= */
+let bgImg;
+
+/* =========================
+   1) GAME STATE (FSM)
+========================= */
+const State = { START: "start", PLAY: "play", GAMEOVER: "gameover" };
+let state = State.START;
+
+/* =========================
+   2) GAME DATA
+========================= */
+const game = {
+  score: 0,
+  lives: 3,
+  level: 1,
+  time: 0, // saniye
+};
+
+/* =========================
+   3) OBJECT MODELS
+========================= */
+const ring = {
+  radius: 80,
+  gapRatio: 0.2,   // gap = 20% (arc 80%)
+  angle: 0,        // rad
+  speed: 1.6,      // rad/s
+  thickness: 1,
+};
+
+const ball = {
+  x: 0, y: 0,
+  r: 12,
+  follow: 0.18, // 0..1 (yumuşak takip)
+};
+
+/* =========================
+   4) EDGE-TRIGGER FLAGS
+========================= */
+let prevPassCondition = false;
+let prevHitCondition  = false;
+
+function preload() {
+  // Arka plan resmini buradan yüklüyoruz:
+  // ring_game/assets/background.jpg
+  bgImg = loadImage(
+    "assets/background.jpg",
+    () => console.log("Arka plan yüklendi"),
+    (e) => console.log("Arka plan yüklenemedi:", e)
+  );
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  frameRate(60);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+/* =========================
+   INPUT (mouse + touch unify)
+========================= */
+function getPointer() {
+  if (touches.length > 0) return { x: touches[0].x, y: touches[0].y };
+  return { x: mouseX, y: mouseY };
+}
+
+function touchStarted() { handlePress(); return false; }
+function mousePressed() { handlePress(); return false; }
+function touchMoved() { return false; }
+
+function handlePress() {
+  if (state === State.START) startGame();
+  else if (state === State.GAMEOVER) startGame();
+}
+
+function startGame() {
+  state = State.PLAY;
+
+  game.score = 0;
+  game.lives = 3;
+  game.level = 1;
+  game.time = 0;
+
+  ring.angle = 0;
+  ball.x = 0;
+  ball.y = 0;
+
+  prevPassCondition = false;
+  prevHitCondition = false;
+}
+
+/* =========================
+   MAIN LOOP
+========================= */
+function draw() {
+  const dt = deltaTime / 1000; // saniye
+  update(dt);
+  render();
+}
+
+/* =========================
+   UPDATE (physics + rules)
+========================= */
+function update(dt) {
+  ring.radius = (min(width, height) / 4) / 3;
+  ring.thickness = 1;
+  ball.r = (ring.radius * 2) / 8;
+
+  if (state !== State.PLAY) return;
+
+  game.time += dt;
+
+  // Level: her 5 skor = 1 level
+  game.level = 1 + floor(game.score / 5);
+
+  // Zorluk ayarı
+  ring.speed = 1.4 + game.level * 0.25;     // rad/s
+  ring.gapRatio = constrain(0.22 - game.level * 0.015, 0.08, 0.22);
+
+  ring.angle = (ring.angle + ring.speed * dt) % TWO_PI;
+
+  // Ball follow pointer (smooth)
+  const p = getPointer();
+  const targetX = p.x - width / 2;
+  const targetY = p.y - height / 2;
+  ball.x = lerp(ball.x, targetX, ball.follow);
+  ball.y = lerp(ball.y, targetY, ball.follow);
+
+  // Collision logic
+  const d = sqrt(ball.x * ball.x + ball.y * ball.y);
+  let ballAngle = atan2(ball.y, ball.x);
+  if (ballAngle < 0) ballAngle += TWO_PI;
+
+  let rotatedAngle = (ballAngle - ring.angle) % TWO_PI;
+  if (rotatedAngle < 0) rotatedAngle += TWO_PI;
+
+  const arcAngle = TWO_PI * (1 - ring.gapRatio);
+  const isInGap = rotatedAngle > arcAngle && rotatedAngle < TWO_PI;
+
+  const isNearRing = abs(d - ring.radius) < (ball.r + 1);
+
+  const passCondition = isInGap && isNearRing;
+  const hitCondition  = (!isInGap) && isNearRing;
+
+  if (!prevPassCondition && passCondition) onPass();
+  if (!prevHitCondition  && hitCondition)  onHit();
+
+  prevPassCondition = passCondition;
+  prevHitCondition  = hitCondition;
+}
+
+function onPass() {
+  game.score += 1;
+}
+
+function onHit() {
+  game.lives -= 1;
+  if (game.lives <= 0) state = State.GAMEOVER;
+}
+
+/* =========================
+   RENDER (only drawing)
+========================= */
+function render() {
+  // 1) Önce arka planı (canvas koordinatında) çiz
+  resetMatrix();
+
+  if (bgImg) {
+    // Fotoğrafı ekrana sığdır (stretch). İstersen "cover" da yaparız.
+    image(bgImg, 0, 0, width, height);
+
+    // Arka planı biraz karartıp oyunu öne çıkar:
+    fill(0, 0, 0, 90);
+    noStroke();
+    rect(0, 0, width, height);
+  } else {
+    // Arka plan yüklenmediyse siyah fallback
+    background(0);
+  }
+
+  // 2) Sonra oyun dünyasına geç
+  translate(width / 2, height / 2);
+
+  // Ring
+  const arcAngle = TWO_PI * (1 - ring.gapRatio);
+  push();
+  rotate(ring.angle);
+  noFill();
+  stroke(255);
+  strokeWeight(ring.thickness);
+  arc(0, 0, ring.radius * 2, ring.radius * 2, 0, arcAngle);
+  pop();
+
+  // Ball
+  noStroke();
+  fill(255);
+  ellipse(ball.x, ball.y, ball.r * 2);
+
+  // HUD (ekrana sabit)
+  push();
+  resetMatrix();
+  fill(255);
+  textSize(22);
+  text(`Score: ${game.score}`, 20, 40);
+  text(`Lives: ${game.lives}`, 20, 70);
+  text(`Level: ${game.level}`, 20, 100);
+
+  if (state === State.START) {
+    textSize(26);
+    text("Tap/Click to Start", 20, 150);
+    textSize(16);
+    text("Goal: Pass through the gap. Avoid the closed ring.", 20, 175);
+  } else if (state === State.GAMEOVER) {
+    textSize(28);
+    text("GAME OVER", 20, 150);
+    textSize(20);
+    text("Tap/Click to Restart", 20, 180);
+  }
+  pop();
+}
+</script>
+</body>
+</html>
