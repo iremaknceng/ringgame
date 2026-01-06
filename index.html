@@ -19,21 +19,25 @@
 ========================= */
 let bgImg;
 let cursorImg;
+let introVideo = null;
+let introStartMs = 0;
+const INTRO_DURATION_MS = 7000;
 
 /* =========================
    GAME STATE
 ========================= */
-const State = { START: "start", PLAY: "play", GAMEOVER: "gameover" };
-let state = State.START;
+const State = {
+  INTRO_WAIT: "intro_wait",
+  INTRO_PLAY: "intro_play",
+  PLAY: "play",
+  GAMEOVER: "gameover"
+};
+let state = State.INTRO_WAIT;
 
 /* =========================
    GAME DATA
 ========================= */
-const game = {
-  score: 0,
-  lives: 3,
-  level: 1
-};
+const game = { score: 0, lives: 3, level: 1 };
 
 /* =========================
    OBJECTS
@@ -43,35 +47,23 @@ const ring = {
   gapRatio: 0.2,
   angle: 0,
   speed: 1.6,
-  thickness: 5 // ✅ Halka kalınlığı 5
+  thickness: 5
 };
 
-const ball = {
-  x: 0,
-  y: 0,
-  r: 12,
-  follow: 0.18
-};
+const ball = { x: 0, y: 0, r: 12, follow: 0.18 };
 
 /* =========================
    FLAGS
 ========================= */
 let prevPass = false;
-let prevHit = false;
+let prevHit  = false;
 
 /* =========================
    PRELOAD
 ========================= */
 function preload() {
-  // background.jpg yoksa oyun yine çalışır (siyah arka plan olur)
   bgImg = loadImage("assets/background.jpg", () => {}, () => {});
-  
-  // ✅ Top yerine çizilecek PNG: assets/mouse.png
-  cursorImg = loadImage(
-    "assets/mouse.png",
-    () => console.log("mouse.png yüklendi"),
-    () => console.log("mouse.png YÜKLENEMEDİ (isim/yol kontrol et)")
-  );
+  cursorImg = loadImage("assets/mouse.png", () => {}, () => {});
 }
 
 /* =========================
@@ -80,37 +72,55 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-
-  // ✅ Sistem imleci gizli, PNG imleç çiziyoruz
-  noCursor();
+  noCursor();           // sistem imleci gizli
   imageMode(CENTER);
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  if (introVideo) introVideo.size(windowWidth, windowHeight);
 }
 
 /* =========================
    INPUT
 ========================= */
+function mousePressed() { handlePress(); }
 function touchStarted() { handlePress(); return false; }
-function mousePressed() { handlePress(); return false; }
-function touchMoved() { return false; }
 
 function handlePress() {
-  if (state !== State.PLAY) startGame();
+  if (state === State.INTRO_WAIT) {
+    startIntroVideoWithSound();
+    return;
+  }
+  if (state === State.GAMEOVER) startGame();
 }
 
+/* =========================
+   INTRO VIDEO
+========================= */
+function startIntroVideoWithSound() {
+  introVideo = createVideo("assets/intro.mp4", () => {
+    introVideo.size(windowWidth, windowHeight);
+    introVideo.hide();
+    introVideo.volume(1);
+    introVideo.elt.muted = false;
+    introVideo.play();
+    introStartMs = millis();
+    state = State.INTRO_PLAY;
+  });
+}
+
+/* =========================
+   START GAME
+========================= */
 function startGame() {
   state = State.PLAY;
   game.score = 0;
   game.lives = 3;
   game.level = 1;
-
   ring.angle = 0;
   ball.x = 0;
   ball.y = 0;
-
   prevPass = false;
   prevHit = false;
 }
@@ -119,9 +129,48 @@ function startGame() {
    MAIN LOOP
 ========================= */
 function draw() {
+  if (state === State.INTRO_WAIT) {
+    drawIntroWait();
+    return;
+  }
+  if (state === State.INTRO_PLAY) {
+    drawIntroPlay();
+    return;
+  }
+
   const dt = deltaTime / 1000;
   update(dt);
   render();
+}
+
+/* =========================
+   INTRO SCREENS
+========================= */
+function drawIntroWait() {
+  background(0);
+  fill(255);
+  textAlign(CENTER, CENTER);
+
+  textSize(32);
+  text("Click to Watch", width / 2, height / 2);
+
+  textSize(16);
+  text("The video will play with sound for 7 seconds.", width / 2, height / 2 + 50);
+}
+
+function drawIntroPlay() {
+  background(0);
+
+  if (introVideo) {
+    image(introVideo, width / 2, height / 2, width, height);
+  }
+
+  if (millis() - introStartMs >= INTRO_DURATION_MS) {
+    introVideo.stop();
+    introVideo.remove();
+    introVideo = null;
+    startGame();
+  }
 }
 
 /* =========================
@@ -138,18 +187,14 @@ function update(dt) {
   ring.gapRatio = constrain(0.22 - game.level * 0.015, 0.08, 0.22);
   ring.angle = (ring.angle + ring.speed * dt) % TWO_PI;
 
-  /* ✅ Mouse algılama noktası ~4mm SOLDA */
-  const OFFSET_MM = 4;
-  const PX_PER_MM = 3.78; // ~96 DPI varsayımı
-  const offsetPx = OFFSET_MM * PX_PER_MM;
-
+  // Mouse algılama noktası ~4mm SOLDA
+  const offsetPx = 4 * 3.78;
   const targetX = (mouseX - offsetPx) - width / 2;
   const targetY = mouseY - height / 2;
 
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
-  // Collision logic
   const d = sqrt(ball.x * ball.x + ball.y * ball.y);
   let ang = atan2(ball.y, ball.x);
   if (ang < 0) ang += TWO_PI;
@@ -157,18 +202,16 @@ function update(dt) {
   const relAng = (ang - ring.angle + TWO_PI) % TWO_PI;
   const arcAng = TWO_PI * (1 - ring.gapRatio);
   const inGap = relAng > arcAng;
-
   const nearRing = abs(d - ring.radius) < ball.r;
 
   if (!prevPass && inGap && nearRing) game.score++;
-
   if (!prevHit && !inGap && nearRing) {
     game.lives--;
     if (game.lives <= 0) state = State.GAMEOVER;
   }
 
   prevPass = inGap && nearRing;
-  prevHit = !inGap && nearRing;
+  prevHit  = !inGap && nearRing;
 }
 
 /* =========================
@@ -180,7 +223,6 @@ function render() {
   if (bgImg) image(bgImg, 0, 0, width, height);
   else background(0);
 
-  // arka planı hafif karart
   fill(0, 150);
   noStroke();
   rect(0, 0, width, height);
@@ -192,14 +234,13 @@ function render() {
   rotate(ring.angle);
   noFill();
   stroke(255);
-  strokeWeight(ring.thickness); // ✅ 5 kalınlık
+  strokeWeight(5);
   arc(0, 0, ring.radius * 2, ring.radius * 2, 0, TWO_PI * (1 - ring.gapRatio));
   pop();
 
-  // ✅ TOP YERİNE MOUSE PNG (boyut yarı: 14px)
+  // Mouse PNG (20px)
   if (cursorImg) {
-    const CURSOR_SIZE = 14; // ✅ yarıya düşürülmüş boyut
-    image(cursorImg, ball.x, ball.y, CURSOR_SIZE, CURSOR_SIZE);
+    image(cursorImg, ball.x, ball.y, 20, 20);
   }
 
   // HUD
@@ -210,14 +251,11 @@ function render() {
   text(`Lives: ${game.lives}`, 20, 70);
   text(`Level: ${game.level}`, 20, 100);
 
-  if (state === State.START) {
-    textSize(26);
-    text("Click/Tap to Start", 20, 150);
-  } else if (state === State.GAMEOVER) {
+  if (state === State.GAMEOVER) {
     textSize(28);
     text("GAME OVER", 20, 150);
     textSize(20);
-    text("Click/Tap to Restart", 20, 180);
+    text("Click to Restart", 20, 180);
   }
 }
 </script>
