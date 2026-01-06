@@ -9,18 +9,13 @@
 
   <style>
     html, body{
-      margin:0;
-      padding:0;
-      width:100%;
-      height:100%;
+      margin:0; padding:0;
+      width:100%; height:100%;
       overflow:hidden;
       background:#000;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
-    canvas{
-      display:block;
-      touch-action:none;
-    }
+    canvas{ display:block; touch-action:none; }
   </style>
 </head>
 
@@ -41,11 +36,7 @@ let state = State.PLAY;
 /* =========================
    GAME DATA
 ========================= */
-const game = {
-  score: 0,
-  lives: 3,
-  level: 1
-};
+const game = { score: 0, lives: 3, level: 1 };
 
 /* =========================
    OBJECTS
@@ -55,24 +46,20 @@ const ring = {
   gapRatio: 0.2,
   angle: 0,
   speed: 1.6,
-  thickness: 5   // ✅ kalın halka
+  thickness: 5
 };
 
-const ball = {
-  x: 0,
-  y: 0,
-  r: 12,
-  follow: 0.18
-};
-
+const ball = { x: 0, y: 0, r: 12, follow: 0.18 };
 let prevPass = false;
 let prevHit  = false;
 
 /* =========================
    SETTINGS
 ========================= */
-const CURSOR_SIZE = 20;          // mouse.png boyutu
-const OFFSET_PX   = 4 * 3.78;    // ~4mm sola offset
+const OFFSET_PX = 4 * 3.78; // ~4mm sola
+
+// ✅ Mouse büyütüldü
+let CURSOR_SIZE = 50; // burada büyüt/küçült (örn 60)
 
 /* =========================
    PRELOAD
@@ -88,13 +75,19 @@ function preload(){
 function setup(){
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
+
+  // oyun objeleri için center iyi, ama arka planda geçici CORNER kullanacağız
   imageMode(CENTER);
   noCursor();
+
   resetGame();
 }
 
 function windowResized(){
   resizeCanvas(windowWidth, windowHeight);
+
+  // istersen mouse’u ekrana göre otomatik ayarla:
+  CURSOR_SIZE = max(40, min(70, min(width, height) * 0.06)); // ✅ otomatik ölçek
 }
 
 /* =========================
@@ -110,6 +103,9 @@ function resetGame(){
   prevPass = false;
   prevHit  = false;
   state = State.PLAY;
+
+  // ilk açılışta da otomatik cursor size
+  CURSOR_SIZE = max(40, min(70, min(width, height) * 0.06));
 }
 
 /* =========================
@@ -179,19 +175,49 @@ function update(dt){
 }
 
 /* =========================
+   BACKGROUND COVER (FIX)
+========================= */
+function drawBackgroundCover(){
+  resetMatrix();
+
+  if (!bgImg) {
+    background(0);
+    return;
+  }
+
+  // ✅ CORNER mode ile güvenli çizim
+  push();
+  imageMode(CORNER);
+
+  const cw = width, ch = height;
+  const iw = bgImg.width, ih = bgImg.height;
+
+  const scale = max(cw / iw, ch / ih);
+  const dw = iw * scale;
+  const dh = ih * scale;
+
+  const dx = (cw - dw) / 2;
+  const dy = (ch - dh) / 2;
+
+  image(bgImg, dx, dy, dw, dh);
+
+  // karartma
+  fill(0, 150);
+  noStroke();
+  rect(0, 0, width, height);
+
+  pop();
+
+  // oyun çizimleri için tekrar CENTER (güvenli)
+  imageMode(CENTER);
+}
+
+/* =========================
    RENDER
 ========================= */
 function render(){
-  resetMatrix();
-
-  if (bgImg) {
-    image(bgImg, 0, 0, width, height);
-    fill(0, 150);
-    noStroke();
-    rect(0, 0, width, height);
-  } else {
-    background(0);
-  }
+  // ✅ Arka plan artık tam
+  drawBackgroundCover();
 
   translate(width/2, height/2);
 
@@ -201,7 +227,7 @@ function render(){
   noFill();
   stroke(255);
   strokeWeight(ring.thickness);
-  arc(0,0, ring.radius*2, ring.radius*2, 0, TWO_PI*(1 - ring.gapRatio));
+  arc(0, 0, ring.radius*2, ring.radius*2, 0, TWO_PI*(1 - ring.gapRatio));
   pop();
 
   // Mouse PNG
@@ -227,4 +253,3 @@ function render(){
 </script>
 </body>
 </html>
-
