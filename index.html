@@ -9,148 +9,87 @@
 
   <style>
     html, body{
-      margin:0; padding:0;
-      width:100%; height:100%;
+      margin:0;
+      padding:0;
+      width:100%;
+      height:100%;
       overflow:hidden;
       background:#000;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
-    canvas{ display:block; touch-action:none; }
-
-    /* ===== INTRO VIDEO WRAP (örnekteki gibi) ===== */
-    #introWrap{
-      position:fixed;
-      inset:0;
-      background:#000;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      z-index:9999;
-    }
-    #introVideo{
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      background:#000;
-    }
-    #tapToStart{
-      position:absolute;
-      top:50%;
-      left:50%;
-      transform:translate(-50%,-50%);
-      padding:14px 22px;
-      border-radius:999px;
-      background:rgba(0,0,0,0.6);
-      color:#fff;
-      font-size:18px;
-      border:1px solid rgba(255,255,255,0.35);
-      display:none;
-      user-select:none;
-      animation:pulse 1.4s infinite;
-    }
-    @keyframes pulse{
-      0%{opacity:0.55;}
-      50%{opacity:1;}
-      100%{opacity:0.55;}
+    canvas{
+      display:block;
+      touch-action:none;
     }
   </style>
 </head>
 
 <body>
-  <!-- ✅ INTRO -->
-  <div id="introWrap">
-    <video id="introVideo" playsinline preload="auto">
-      <source src="assets/intro.mp4?v=2" type="video/mp4" />
-    </video>
-    <div id="tapToStart">Click to Watch ▶</div>
-  </div>
-
 <script>
 /* =========================
-   0) INTRO VIDEO (örnekteki mantık)
-========================= */
-const introWrap  = document.getElementById("introWrap");
-const introVideo = document.getElementById("introVideo");
-const tapToStart = document.getElementById("tapToStart");
-
-// Autoplay dener. Olmazsa buton çıkar.
-async function tryPlayIntro(){
-  try{
-    introVideo.muted = false;
-    introVideo.volume = 1.0;
-    const pr = introVideo.play();
-    if (pr) await pr;
-  }catch(e){
-    tapToStart.style.display = "block";
-  }
-}
-
-// Kullanıcı tıklayınca kesin başlat
-tapToStart.addEventListener("click", async () => {
-  tapToStart.style.display = "none";
-  try{
-    introVideo.muted = false;
-    introVideo.volume = 1.0;
-    await introVideo.play();
-  }catch(e){}
-}, { passive:true });
-
-// Video bitince intro kapanır ve oyun başlar
-introVideo.addEventListener("ended", () => {
-  introWrap.style.display = "none";
-  state = State.PLAY; // oyunu başlat
-});
-
-// ilk deneme
-tryPlayIntro();
-
-/* =========================
-   1) GAME (p5.js) - Halka oyunu
+   ASSETS
 ========================= */
 let bgImg;
 let cursorImg;
 
+/* =========================
+   GAME STATE
+========================= */
 const State = { PLAY:"play", GAMEOVER:"gameover" };
-let state = State.PLAY; // ama intro bitene kadar update/render duracak (aşağıda)
+let state = State.PLAY;
 
-// Game data
-const game = { score: 0, lives: 3, level: 1 };
+/* =========================
+   GAME DATA
+========================= */
+const game = {
+  score: 0,
+  lives: 3,
+  level: 1
+};
 
-// Ring
+/* =========================
+   OBJECTS
+========================= */
 const ring = {
   radius: 80,
   gapRatio: 0.2,
   angle: 0,
   speed: 1.6,
-  thickness: 5 // ✅ 5 kat kalın
+  thickness: 5   // ✅ kalın halka
 };
 
-// Pointer follower (mantıksal top)
-const ball = { x: 0, y: 0, r: 12, follow: 0.18 };
+const ball = {
+  x: 0,
+  y: 0,
+  r: 12,
+  follow: 0.18
+};
 
 let prevPass = false;
 let prevHit  = false;
 
-// ✅ Mouse algılama noktası ~4mm SOLDA
-const OFFSET_MM = 4;
-const PX_PER_MM = 3.78;
-const offsetPx = OFFSET_MM * PX_PER_MM;
+/* =========================
+   SETTINGS
+========================= */
+const CURSOR_SIZE = 20;          // mouse.png boyutu
+const OFFSET_PX   = 4 * 3.78;    // ~4mm sola offset
 
-// Cursor png size
-const CURSOR_SIZE = 20;
-
+/* =========================
+   PRELOAD
+========================= */
 function preload(){
-  bgImg = loadImage("assets/background.jpg?v=2", ()=>{}, ()=>{});
-  cursorImg = loadImage("assets/mouse.png?v=2", ()=>{}, ()=>{});
+  bgImg     = loadImage("assets/background.jpg", ()=>{}, ()=>{});
+  cursorImg = loadImage("assets/mouse.png", ()=>{}, ()=>{});
 }
 
+/* =========================
+   SETUP
+========================= */
 function setup(){
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-  noCursor();
   imageMode(CENTER);
-
-  // Oyun değişkenlerini sıfırla (intro’dan sonra temiz başlasın)
+  noCursor();
   resetGame();
 }
 
@@ -158,6 +97,9 @@ function windowResized(){
   resizeCanvas(windowWidth, windowHeight);
 }
 
+/* =========================
+   RESET
+========================= */
 function resetGame(){
   game.score = 0;
   game.lives = 3;
@@ -167,8 +109,12 @@ function resetGame(){
   ball.y = 0;
   prevPass = false;
   prevHit  = false;
+  state = State.PLAY;
 }
 
+/* =========================
+   INPUT
+========================= */
 function mousePressed(){
   if (state === State.GAMEOVER) resetGame();
   return false;
@@ -178,46 +124,39 @@ function touchStarted(){
   return false;
 }
 
+/* =========================
+   MAIN LOOP
+========================= */
 function draw(){
-  // ✅ Intro açıkken oyun “arkada” çalışmasın:
-  // introWrap görünüyorsa sadece arka planı basit çizelim (istersen hiç çizme de olur)
-  if (introWrap.style.display !== "none") {
-    background(0);
-    return;
-  }
-
   const dt = deltaTime / 1000;
   update(dt);
   render();
 }
 
+/* =========================
+   UPDATE
+========================= */
 function update(dt){
-  // ölçüler
   ring.radius = min(width, height) / 6;
   ball.r = ring.radius / 3;
 
   if (state !== State.PLAY) return;
 
-  // level
   game.level = 1 + floor(game.score / 5);
-
-  // zorluk
   ring.speed = 1.4 + game.level * 0.25;
   ring.gapRatio = constrain(0.22 - game.level * 0.015, 0.08, 0.22);
 
   ring.angle = (ring.angle + ring.speed * dt) % TWO_PI;
 
-  // pointer follow
   const px = (touches && touches.length) ? touches[0].x : mouseX;
   const py = (touches && touches.length) ? touches[0].y : mouseY;
 
-  const targetX = (px - offsetPx) - width/2;
+  const targetX = (px - OFFSET_PX) - width/2;
   const targetY = py - height/2;
 
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
-  // collision
   const d = sqrt(ball.x*ball.x + ball.y*ball.y);
   let ang = atan2(ball.y, ball.x);
   if (ang < 0) ang += TWO_PI;
@@ -239,20 +178,24 @@ function update(dt){
   prevHit  = !inGap && nearRing;
 }
 
+/* =========================
+   RENDER
+========================= */
 function render(){
   resetMatrix();
 
-  // background
   if (bgImg) {
     image(bgImg, 0, 0, width, height);
-    fill(0,150); noStroke(); rect(0,0,width,height);
+    fill(0, 150);
+    noStroke();
+    rect(0, 0, width, height);
   } else {
     background(0);
   }
 
   translate(width/2, height/2);
 
-  // ring
+  // Ring
   push();
   rotate(ring.angle);
   noFill();
@@ -261,8 +204,10 @@ function render(){
   arc(0,0, ring.radius*2, ring.radius*2, 0, TWO_PI*(1 - ring.gapRatio));
   pop();
 
-  // cursor png (top yerine)
-  if (cursorImg) image(cursorImg, ball.x, ball.y, CURSOR_SIZE, CURSOR_SIZE);
+  // Mouse PNG
+  if (cursorImg) {
+    image(cursorImg, ball.x, ball.y, CURSOR_SIZE, CURSOR_SIZE);
+  }
 
   // HUD
   resetMatrix();
