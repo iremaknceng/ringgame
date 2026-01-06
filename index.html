@@ -5,37 +5,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Ring Gap Game</title>
 
-  <!-- p5 core -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
-  <!-- ✅ p5.dom: createVideo için şart -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/addons/p5.dom.min.js"></script>
 
   <style>
     body { margin: 0; overflow: hidden; background: black; }
     canvas { display: block; touch-action: none; }
+
+    /* ✅ Video overlay */
+    #introVideo {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      display: none;       /* başlangıçta gizli */
+      z-index: 10;
+      background: black;
+    }
   </style>
 </head>
 <body>
+
+<!-- ✅ HTML Video (sesli) -->
+<video id="introVideo" src="assets/intro.mp4" playsinline webkit-playsinline></video>
+
 <script>
 /* =========================
-   ASSETS
+   ASSETS (p5)
 ========================= */
 let bgImg;
 let cursorImg;
-let introVideo = null;
-let introStartMs = 0;
-const INTRO_DURATION_MS = 7000;
+
+/* =========================
+   HTML VIDEO
+========================= */
+let vidEl;
+let introStartedAt = 0;
+const INTRO_MS = 7000;
 
 /* =========================
    GAME STATE
 ========================= */
 const State = {
-  INTRO_WAIT: "intro_wait",
-  INTRO_PLAY: "intro_play",
+  INTRO: "intro",   // play butonu ekranı
   PLAY: "play",
   GAMEOVER: "gameover"
 };
-let state = State.INTRO_WAIT;
+let state = State.INTRO;
 
 /* =========================
    GAME DATA
@@ -62,6 +78,22 @@ let prevPass = false;
 let prevHit  = false;
 
 /* =========================
+   PLAY BUTTON GEOMETRY
+========================= */
+function getPlayButton() {
+  const cx = width / 2;
+  const cy = height / 2;
+  const R  = min(width, height) * 0.07; // buton büyüklüğü
+  return { cx, cy, R };
+}
+
+function isInsidePlayButton(px, py) {
+  const { cx, cy, R } = getPlayButton();
+  const dx = px - cx, dy = py - cy;
+  return (dx*dx + dy*dy) <= (R*R);
+}
+
+/* =========================
    PRELOAD
 ========================= */
 function preload() {
@@ -77,56 +109,78 @@ function setup() {
   frameRate(60);
   noCursor();
   imageMode(CENTER);
+
+  // HTML video element
+  vidEl = document.getElementById("introVideo");
+
+  // Video biterse de oyuna geç (yedek)
+  vidEl.addEventListener("ended", () => finishIntro());
+
+  // Hata olursa konsola yaz
+  vidEl.addEventListener("error", () => {
+    console.log("Video load error: assets/intro.mp4 yolu/ismi doğru mu?");
+  });
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  if (introVideo) introVideo.size(windowWidth, windowHeight);
 }
 
 /* =========================
    INPUT
 ========================= */
-function mousePressed() { handlePress(); }
-function touchStarted() { handlePress(); return false; }
+function mousePressed() { handlePress(mouseX, mouseY); return false; }
+function touchStarted() {
+  const t = touches[0] || { x: mouseX, y: mouseY };
+  handlePress(t.x, t.y);
+  return false;
+}
 
-function handlePress() {
-  if (state === State.INTRO_WAIT) {
-    startIntroVideoWithSound();
+function handlePress(px, py) {
+  if (state === State.INTRO) {
+    if (isInsidePlayButton(px, py)) startIntroVideo();
     return;
   }
   if (state === State.GAMEOVER) startGame();
 }
 
 /* =========================
-   INTRO VIDEO
+   INTRO VIDEO START
 ========================= */
-function startIntroVideoWithSound() {
-  // ikinci kez tıklanınca tekrar video yaratmasın
-  if (state !== State.INTRO_WAIT) return;
+async function startIntroVideo() {
+  // Video görünür yap
+  vidEl.style.display = "block";
 
-  introVideo = createVideo("assets/intro.mp4", () => {
-    introVideo.size(windowWidth, windowHeight);
-    introVideo.hide();
+  // Sesli başlatmak için muted=false
+  vidEl.muted = false;
+  vidEl.volume = 1;
 
-    // mobil safari için faydalı
-    introVideo.elt.setAttribute("playsinline", "");
-    introVideo.elt.setAttribute("webkit-playsinline", "");
+  // Baştan sar
+  try { vidEl.currentTime = 0; } catch(e) {}
 
-    introVideo.volume(1);
-    introVideo.elt.muted = false;
+  // ✅ user gesture içinde play -> sesli çalışır
+  try {
+    const p = vidEl.play();
+    if (p && p.catch) await p;
+    introStartedAt = millis();
+    // 7 sn sonra bitir
+    setTimeout(finishIntro, INTRO_MS);
+  } catch (err) {
+    // Eğer tarayıcı engellerse (nadir), sessiz başlatıp hemen tekrar deneyebiliriz
+    console.log("play blocked:", err);
+  }
+}
 
-    const p = introVideo.play(); // user gesture sonrası sesli oynar
-    if (p && p.catch) p.catch(err => console.log("play() blocked:", err));
+function finishIntro() {
+  // Bir kere çalışsın
+  if (state !== State.INTRO) return;
 
-    introStartMs = millis();
-    state = State.INTRO_PLAY;
-  });
+  // Video gizle/durdur
+  try { vidEl.pause(); } catch(e) {}
+  vidEl.style.display = "none";
 
-  // dosya yoksa / yüklenmezse anlayalım
-  introVideo.elt.addEventListener("error", () => {
-    console.log("Video load error. assets/intro.mp4 yolu doğru mu?");
-  });
+  // Oyunu başlat
+  startGame();
 }
 
 /* =========================
@@ -148,37 +202,56 @@ function startGame() {
    MAIN LOOP
 ========================= */
 function draw() {
-  if (state === State.INTRO_WAIT) { drawIntroWait(); return; }
-  if (state === State.INTRO_PLAY) { drawIntroPlay(); return; }
+  if (state === State.INTRO) {
+    renderIntroScreen();
+    return;
+  }
 
   const dt = deltaTime / 1000;
   update(dt);
-  render();
+  renderGame();
 }
 
 /* =========================
-   INTRO SCREENS
+   INTRO RENDER (triangle button)
 ========================= */
-function drawIntroWait() {
+function renderIntroScreen() {
   background(0);
+
+  // Yazı
   fill(255);
   textAlign(CENTER, CENTER);
+  textSize(26);
+  text("Click to Watch", width/2, height/2 - 90);
 
-  textSize(32);
-  text("Click to Watch", width / 2, height / 2);
+  textSize(14);
+  text("The video will play with sound for 7 seconds.", width/2, height/2 - 60);
 
-  textSize(16);
-  text("The video will play with sound for 7 seconds.", width / 2, height / 2 + 50);
-}
+  // Play butonu
+  const { cx, cy, R } = getPlayButton();
 
-function drawIntroPlay() {
-  background(0);
-  if (introVideo) image(introVideo, width/2, height/2, width, height);
+  // daire
+  noFill();
+  stroke(255);
+  strokeWeight(3);
+  circle(cx, cy, R*2);
 
-  if (millis() - introStartMs >= INTRO_DURATION_MS) {
-    if (introVideo) { introVideo.stop(); introVideo.remove(); introVideo = null; }
-    startGame();
-  }
+  // üçgen
+  noStroke();
+  fill(255);
+  const triW = R * 0.85;
+  const triH = R * 0.95;
+  // sağa bakan üçgen
+  triangle(
+    cx - triW*0.35, cy - triH*0.55,
+    cx - triW*0.35, cy + triH*0.55,
+    cx + triW*0.65, cy
+  );
+
+  // küçük not
+  fill(180);
+  textSize(12);
+  text("Click the play button", width/2, height/2 + R + 22);
 }
 
 /* =========================
@@ -197,13 +270,14 @@ function update(dt) {
 
   // ~4mm sola offset
   const offsetPx = 4 * 3.78;
-  const targetX = (mouseX - offsetPx) - width / 2;
-  const targetY = mouseY - height / 2;
+  const targetX = (mouseX - offsetPx) - width/2;
+  const targetY = mouseY - height/2;
 
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
-  const d = sqrt(ball.x * ball.x + ball.y * ball.y);
+  // collision
+  const d = sqrt(ball.x*ball.x + ball.y*ball.y);
   let ang = atan2(ball.y, ball.x);
   if (ang < 0) ang += TWO_PI;
 
@@ -223,10 +297,11 @@ function update(dt) {
 }
 
 /* =========================
-   RENDER
+   RENDER GAME
 ========================= */
-function render() {
+function renderGame() {
   resetMatrix();
+
   if (bgImg) image(bgImg, 0, 0, width, height);
   else background(0);
 
@@ -234,20 +309,21 @@ function render() {
   noStroke();
   rect(0, 0, width, height);
 
-  translate(width / 2, height / 2);
+  translate(width/2, height/2);
 
+  // ring
   push();
   rotate(ring.angle);
   noFill();
   stroke(255);
-  strokeWeight(5);
-  arc(0, 0, ring.radius * 2, ring.radius * 2, 0, TWO_PI * (1 - ring.gapRatio));
+  strokeWeight(ring.thickness);
+  arc(0,0, ring.radius*2, ring.radius*2, 0, TWO_PI*(1 - ring.gapRatio));
   pop();
 
-  if (cursorImg) {
-    image(cursorImg, ball.x, ball.y, 20, 20);
-  }
+  // mouse png (20px)
+  if (cursorImg) image(cursorImg, ball.x, ball.y, 20, 20);
 
+  // HUD
   resetMatrix();
   fill(255);
   textSize(20);
