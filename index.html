@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Ring Gap Game (Background)</title>
+  <title>Ring Gap Game</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
 
@@ -14,66 +14,72 @@
 </head>
 <body>
 <script>
-/* =========================
-   BACKGROUND IMAGE
-========================= */
-let bgImg;
 
 /* =========================
-   1) GAME STATE (FSM)
+   ASSETS
 ========================= */
-const State = { START: "start", PLAY: "play", GAMEOVER: "gameover" };
+let bgImg;
+let cursorImg;
+
+/* =========================
+   GAME STATE
+========================= */
+const State = { START:"start", PLAY:"play", GAMEOVER:"gameover" };
 let state = State.START;
 
 /* =========================
-   2) GAME DATA
+   GAME DATA
 ========================= */
 const game = {
   score: 0,
   lives: 3,
-  level: 1,
-  time: 0, // saniye
+  level: 1
 };
 
 /* =========================
-   3) OBJECT MODELS
+   OBJECTS
 ========================= */
 const ring = {
   radius: 80,
-  gapRatio: 0.2,   // gap = 20% (arc 80%)
-  angle: 0,        // rad
-  speed: 1.6,      // rad/s
-  thickness: 1,
+  gapRatio: 0.2,
+  angle: 0,
+  speed: 1.6,
+  thickness: 3   // ✅ 3 kat kalın
 };
 
 const ball = {
-  x: 0, y: 0,
+  x: 0,
+  y: 0,
   r: 12,
-  follow: 0.18, // 0..1 (yumuşak takip)
+  follow: 0.18
 };
 
 /* =========================
-   4) EDGE-TRIGGER FLAGS
+   FLAGS
 ========================= */
-let prevPassCondition = false;
-let prevHitCondition  = false;
+let prevPass = false;
+let prevHit  = false;
 
+/* =========================
+   PRELOAD
+========================= */
 function preload() {
-  // Arka plan resmini buradan yüklüyoruz:
-  // ring_game/assets/background.jpg
-  bgImg = loadImage(
-    "assets/background.jpg",
-    () => console.log("Arka plan yüklendi"),
-    (e) => console.log("Arka plan yüklenemedi:", e)
+  bgImg = loadImage("assets/background.jpg", ()=>{}, ()=>{});
+  cursorImg = loadImage(
+    "assets/mouse.png",
+    () => console.log("mouse.png yüklendi"),
+    () => console.log("mouse.png YÜKLENEMEDİ")
   );
 }
 
+/* =========================
+   SETUP
+========================= */
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-
-  // Topu çizmediğimiz için mouse okunu kullanacağız:
-  noCursor(); // canvas içinde imleci gizleme istersen bunu kaldır
+  noCursor();              // ✅ sistem mouse gizli
+  imageMode(CENTER);
 }
 
 function windowResized() {
@@ -81,177 +87,128 @@ function windowResized() {
 }
 
 /* =========================
-   INPUT (mouse + touch unify)
+   INPUT
 ========================= */
-function getPointer() {
-  if (touches.length > 0) return { x: touches[0].x, y: touches[0].y };
-  return { x: mouseX, y: mouseY };
-}
-
-function touchStarted() { handlePress(); return false; }
-function mousePressed() { handlePress(); return false; }
-function touchMoved() { return false; }
-
-function handlePress() {
-  if (state === State.START) startGame();
-  else if (state === State.GAMEOVER) startGame();
+function mousePressed() {
+  if (state !== State.PLAY) startGame();
 }
 
 function startGame() {
   state = State.PLAY;
-
   game.score = 0;
   game.lives = 3;
   game.level = 1;
-  game.time = 0;
-
   ring.angle = 0;
   ball.x = 0;
   ball.y = 0;
-
-  prevPassCondition = false;
-  prevHitCondition = false;
+  prevPass = false;
+  prevHit = false;
 }
 
 /* =========================
    MAIN LOOP
 ========================= */
 function draw() {
-  const dt = deltaTime / 1000; // saniye
+  const dt = deltaTime / 1000;
   update(dt);
   render();
 }
 
 /* =========================
-   UPDATE (physics + rules)
+   UPDATE
 ========================= */
 function update(dt) {
-  ring.radius = (min(width, height) / 4) / 3;
-
-  // ✅ Halka kalınlığı 3 kat:
-  ring.thickness = 3;
-
-  ball.r = (ring.radius * 2) / 8;
+  ring.radius = min(width, height) / 6;
+  ball.r = ring.radius / 3;
 
   if (state !== State.PLAY) return;
 
-  game.time += dt;
-
-  // Level: her 5 skor = 1 level
   game.level = 1 + floor(game.score / 5);
-
-  // Zorluk ayarı
-  ring.speed = 1.4 + game.level * 0.25;     // rad/s
+  ring.speed = 1.4 + game.level * 0.25;
   ring.gapRatio = constrain(0.22 - game.level * 0.015, 0.08, 0.22);
-
   ring.angle = (ring.angle + ring.speed * dt) % TWO_PI;
 
-  // Ball follow pointer (smooth)
-  const p = getPointer();
-
-  // ✅ Mouse okunu elin altında kalmasın diye ~4mm sola kaydır
-  // 96 DPI varsayımıyla: 1mm ≈ 3.78px -> 4mm ≈ 15px
+  /* ✅ Mouse algılama noktası ~4mm SOLDA */
   const OFFSET_MM = 4;
   const PX_PER_MM = 3.78;
   const offsetPx = OFFSET_MM * PX_PER_MM;
 
-  const targetX = (p.x - offsetPx) - width / 2;
-  const targetY = p.y - height / 2;
+  const targetX = (mouseX - offsetPx) - width / 2;
+  const targetY = mouseY - height / 2;
 
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
-  // Collision logic
-  const d = sqrt(ball.x * ball.x + ball.y * ball.y);
-  let ballAngle = atan2(ball.y, ball.x);
-  if (ballAngle < 0) ballAngle += TWO_PI;
+  const d = sqrt(ball.x*ball.x + ball.y*ball.y);
+  let ang = atan2(ball.y, ball.x);
+  if (ang < 0) ang += TWO_PI;
 
-  let rotatedAngle = (ballAngle - ring.angle) % TWO_PI;
-  if (rotatedAngle < 0) rotatedAngle += TWO_PI;
+  let relAng = (ang - ring.angle + TWO_PI) % TWO_PI;
+  const arcAng = TWO_PI * (1 - ring.gapRatio);
+  const inGap = relAng > arcAng;
+  const nearRing = abs(d - ring.radius) < ball.r;
 
-  const arcAngle = TWO_PI * (1 - ring.gapRatio);
-  const isInGap = rotatedAngle > arcAngle && rotatedAngle < TWO_PI;
+  if (!prevPass && inGap && nearRing) game.score++;
+  if (!prevHit && !inGap && nearRing) {
+    game.lives--;
+    if (game.lives <= 0) state = State.GAMEOVER;
+  }
 
-  const isNearRing = abs(d - ring.radius) < (ball.r + 1);
-
-  const passCondition = isInGap && isNearRing;
-  const hitCondition  = (!isInGap) && isNearRing;
-
-  if (!prevPassCondition && passCondition) onPass();
-  if (!prevHitCondition  && hitCondition)  onHit();
-
-  prevPassCondition = passCondition;
-  prevHitCondition  = hitCondition;
-}
-
-function onPass() {
-  game.score += 1;
-}
-
-function onHit() {
-  game.lives -= 1;
-  if (game.lives <= 0) state = State.GAMEOVER;
+  prevPass = inGap && nearRing;
+  prevHit  = !inGap && nearRing;
 }
 
 /* =========================
-   RENDER (only drawing)
+   RENDER
 ========================= */
 function render() {
-  // 1) Önce arka planı (canvas koordinatında) çiz
   resetMatrix();
 
-  if (bgImg) {
-    // Fotoğrafı ekrana sığdır (stretch). İstersen "cover" da yaparız.
-    image(bgImg, 0, 0, width, height);
+  if (bgImg) image(bgImg, 0, 0, width, height);
+  else background(0);
 
-    // Arka planı biraz karartıp oyunu öne çıkar:
-    fill(0, 0, 0, 90);
-    noStroke();
-    rect(0, 0, width, height);
-  } else {
-    // Arka plan yüklenmediyse siyah fallback
-    background(0);
-  }
+  fill(0,150);
+  noStroke();
+  rect(0,0,width,height);
 
-  // 2) Sonra oyun dünyasına geç
-  translate(width / 2, height / 2);
+  translate(width/2, height/2);
 
-  // Ring
-  const arcAngle = TWO_PI * (1 - ring.gapRatio);
+  /* Ring */
   push();
   rotate(ring.angle);
   noFill();
   stroke(255);
   strokeWeight(ring.thickness);
-  arc(0, 0, ring.radius * 2, ring.radius * 2, 0, arcAngle);
+  arc(0,0,ring.radius*2,ring.radius*2,0,TWO_PI*(1-ring.gapRatio));
   pop();
 
-  // ✅ Topu çizme: Mouse oku ile oynanacak
-  // (Çarpışma hesapları ball.x/ball.y ile devam ediyor.)
+  /* ✅ TOP YERİNE MOUSE PNG */
+  if (cursorImg) {
+    image(cursorImg, ball.x, ball.y, ball.r*3, ball.r*3);
+  }
 
-  // HUD (ekrana sabit)
-  push();
+  /* HUD */
   resetMatrix();
   fill(255);
-  textSize(22);
-  text(`Score: ${game.score}`, 20, 40);
-  text(`Lives: ${game.lives}`, 20, 70);
-  text(`Level: ${game.level}`, 20, 100);
+  textSize(20);
+  text(`Score: ${game.score}`,20,40);
+  text(`Lives: ${game.lives}`,20,70);
+  text(`Level: ${game.level}`,20,100);
 
   if (state === State.START) {
     textSize(26);
-    text("Tap/Click to Start", 20, 150);
-    textSize(16);
-    text("Goal: Pass through the gap. Avoid the closed ring.", 20, 175);
-  } else if (state === State.GAMEOVER) {
-    textSize(28);
-    text("GAME OVER", 20, 150);
-    textSize(20);
-    text("Tap/Click to Restart", 20, 180);
+    text("Click to Start",20,150);
   }
-  pop();
+  if (state === State.GAMEOVER) {
+    textSize(28);
+    text("GAME OVER",20,150);
+    textSize(20);
+    text("Click to Restart",20,180);
+  }
 }
+
 </script>
 </body>
 </html>
+
 
