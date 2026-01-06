@@ -71,6 +71,9 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
+
+  // Topu çizmediğimiz için mouse okunu kullanacağız:
+  noCursor(); // canvas içinde imleci gizleme istersen bunu kaldır
 }
 
 function windowResized() {
@@ -124,7 +127,10 @@ function draw() {
 ========================= */
 function update(dt) {
   ring.radius = (min(width, height) / 4) / 3;
-  ring.thickness = 1;
+
+  // ✅ Halka kalınlığı 3 kat:
+  ring.thickness = 3;
+
   ball.r = (ring.radius * 2) / 8;
 
   if (state !== State.PLAY) return;
@@ -142,8 +148,16 @@ function update(dt) {
 
   // Ball follow pointer (smooth)
   const p = getPointer();
-  const targetX = p.x - width / 2;
+
+  // ✅ Mouse okunu elin altında kalmasın diye ~4mm sola kaydır
+  // 96 DPI varsayımıyla: 1mm ≈ 3.78px -> 4mm ≈ 15px
+  const OFFSET_MM = 4;
+  const PX_PER_MM = 3.78;
+  const offsetPx = OFFSET_MM * PX_PER_MM;
+
+  const targetX = (p.x - offsetPx) - width / 2;
   const targetY = p.y - height / 2;
+
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
@@ -212,10 +226,8 @@ function render() {
   arc(0, 0, ring.radius * 2, ring.radius * 2, 0, arcAngle);
   pop();
 
-  // Ball
-  noStroke();
-  fill(255);
-  ellipse(ball.x, ball.y, ball.r * 2);
+  // ✅ Topu çizme: Mouse oku ile oynanacak
+  // (Çarpışma hesapları ball.x/ball.y ile devam ediyor.)
 
   // HUD (ekrana sabit)
   push();
@@ -242,3 +254,4 @@ function render() {
 </script>
 </body>
 </html>
+
