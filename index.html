@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>Ring Gap Game</title>
 
+  <!-- p5 core -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <!-- ✅ p5.dom: createVideo için şart -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/addons/p5.dom.min.js"></script>
 
   <style>
     body { margin: 0; overflow: hidden; background: black; }
@@ -72,7 +75,7 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-  noCursor();           // sistem imleci gizli
+  noCursor();
   imageMode(CENTER);
 }
 
@@ -99,14 +102,30 @@ function handlePress() {
    INTRO VIDEO
 ========================= */
 function startIntroVideoWithSound() {
+  // ikinci kez tıklanınca tekrar video yaratmasın
+  if (state !== State.INTRO_WAIT) return;
+
   introVideo = createVideo("assets/intro.mp4", () => {
     introVideo.size(windowWidth, windowHeight);
     introVideo.hide();
+
+    // mobil safari için faydalı
+    introVideo.elt.setAttribute("playsinline", "");
+    introVideo.elt.setAttribute("webkit-playsinline", "");
+
     introVideo.volume(1);
     introVideo.elt.muted = false;
-    introVideo.play();
+
+    const p = introVideo.play(); // user gesture sonrası sesli oynar
+    if (p && p.catch) p.catch(err => console.log("play() blocked:", err));
+
     introStartMs = millis();
     state = State.INTRO_PLAY;
+  });
+
+  // dosya yoksa / yüklenmezse anlayalım
+  introVideo.elt.addEventListener("error", () => {
+    console.log("Video load error. assets/intro.mp4 yolu doğru mu?");
   });
 }
 
@@ -129,14 +148,8 @@ function startGame() {
    MAIN LOOP
 ========================= */
 function draw() {
-  if (state === State.INTRO_WAIT) {
-    drawIntroWait();
-    return;
-  }
-  if (state === State.INTRO_PLAY) {
-    drawIntroPlay();
-    return;
-  }
+  if (state === State.INTRO_WAIT) { drawIntroWait(); return; }
+  if (state === State.INTRO_PLAY) { drawIntroPlay(); return; }
 
   const dt = deltaTime / 1000;
   update(dt);
@@ -160,15 +173,10 @@ function drawIntroWait() {
 
 function drawIntroPlay() {
   background(0);
-
-  if (introVideo) {
-    image(introVideo, width / 2, height / 2, width, height);
-  }
+  if (introVideo) image(introVideo, width/2, height/2, width, height);
 
   if (millis() - introStartMs >= INTRO_DURATION_MS) {
-    introVideo.stop();
-    introVideo.remove();
-    introVideo = null;
+    if (introVideo) { introVideo.stop(); introVideo.remove(); introVideo = null; }
     startGame();
   }
 }
@@ -187,7 +195,7 @@ function update(dt) {
   ring.gapRatio = constrain(0.22 - game.level * 0.015, 0.08, 0.22);
   ring.angle = (ring.angle + ring.speed * dt) % TWO_PI;
 
-  // Mouse algılama noktası ~4mm SOLDA
+  // ~4mm sola offset
   const offsetPx = 4 * 3.78;
   const targetX = (mouseX - offsetPx) - width / 2;
   const targetY = mouseY - height / 2;
@@ -219,7 +227,6 @@ function update(dt) {
 ========================= */
 function render() {
   resetMatrix();
-
   if (bgImg) image(bgImg, 0, 0, width, height);
   else background(0);
 
@@ -229,7 +236,6 @@ function render() {
 
   translate(width / 2, height / 2);
 
-  // Ring
   push();
   rotate(ring.angle);
   noFill();
@@ -238,12 +244,10 @@ function render() {
   arc(0, 0, ring.radius * 2, ring.radius * 2, 0, TWO_PI * (1 - ring.gapRatio));
   pop();
 
-  // Mouse PNG (20px)
   if (cursorImg) {
     image(cursorImg, ball.x, ball.y, 20, 20);
   }
 
-  // HUD
   resetMatrix();
   fill(255);
   textSize(20);
@@ -261,4 +265,3 @@ function render() {
 </script>
 </body>
 </html>
-
