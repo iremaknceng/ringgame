@@ -14,7 +14,6 @@
 </head>
 <body>
 <script>
-
 /* =========================
    ASSETS
 ========================= */
@@ -24,7 +23,7 @@ let cursorImg;
 /* =========================
    GAME STATE
 ========================= */
-const State = { START:"start", PLAY:"play", GAMEOVER:"gameover" };
+const State = { START: "start", PLAY: "play", GAMEOVER: "gameover" };
 let state = State.START;
 
 /* =========================
@@ -44,7 +43,7 @@ const ring = {
   gapRatio: 0.2,
   angle: 0,
   speed: 1.6,
-  thickness: 3   // ✅ 3 kat kalın
+  thickness: 5 // ✅ Halka kalınlığı 5
 };
 
 const ball = {
@@ -58,17 +57,20 @@ const ball = {
    FLAGS
 ========================= */
 let prevPass = false;
-let prevHit  = false;
+let prevHit = false;
 
 /* =========================
    PRELOAD
 ========================= */
 function preload() {
-  bgImg = loadImage("assets/background.jpg", ()=>{}, ()=>{});
+  // background.jpg yoksa oyun yine çalışır (siyah arka plan olur)
+  bgImg = loadImage("assets/background.jpg", () => {}, () => {});
+  
+  // ✅ Top yerine çizilecek PNG: assets/mouse.png
   cursorImg = loadImage(
     "assets/mouse.png",
     () => console.log("mouse.png yüklendi"),
-    () => console.log("mouse.png YÜKLENEMEDİ")
+    () => console.log("mouse.png YÜKLENEMEDİ (isim/yol kontrol et)")
   );
 }
 
@@ -78,7 +80,9 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
   frameRate(60);
-  noCursor();              // ✅ sistem mouse gizli
+
+  // ✅ Sistem imleci gizli, PNG imleç çiziyoruz
+  noCursor();
   imageMode(CENTER);
 }
 
@@ -89,7 +93,11 @@ function windowResized() {
 /* =========================
    INPUT
 ========================= */
-function mousePressed() {
+function touchStarted() { handlePress(); return false; }
+function mousePressed() { handlePress(); return false; }
+function touchMoved() { return false; }
+
+function handlePress() {
   if (state !== State.PLAY) startGame();
 }
 
@@ -98,9 +106,11 @@ function startGame() {
   game.score = 0;
   game.lives = 3;
   game.level = 1;
+
   ring.angle = 0;
   ball.x = 0;
   ball.y = 0;
+
   prevPass = false;
   prevHit = false;
 }
@@ -130,7 +140,7 @@ function update(dt) {
 
   /* ✅ Mouse algılama noktası ~4mm SOLDA */
   const OFFSET_MM = 4;
-  const PX_PER_MM = 3.78;
+  const PX_PER_MM = 3.78; // ~96 DPI varsayımı
   const offsetPx = OFFSET_MM * PX_PER_MM;
 
   const targetX = (mouseX - offsetPx) - width / 2;
@@ -139,23 +149,26 @@ function update(dt) {
   ball.x = lerp(ball.x, targetX, ball.follow);
   ball.y = lerp(ball.y, targetY, ball.follow);
 
-  const d = sqrt(ball.x*ball.x + ball.y*ball.y);
+  // Collision logic
+  const d = sqrt(ball.x * ball.x + ball.y * ball.y);
   let ang = atan2(ball.y, ball.x);
   if (ang < 0) ang += TWO_PI;
 
-  let relAng = (ang - ring.angle + TWO_PI) % TWO_PI;
+  const relAng = (ang - ring.angle + TWO_PI) % TWO_PI;
   const arcAng = TWO_PI * (1 - ring.gapRatio);
   const inGap = relAng > arcAng;
+
   const nearRing = abs(d - ring.radius) < ball.r;
 
   if (!prevPass && inGap && nearRing) game.score++;
+
   if (!prevHit && !inGap && nearRing) {
     game.lives--;
     if (game.lives <= 0) state = State.GAMEOVER;
   }
 
   prevPass = inGap && nearRing;
-  prevHit  = !inGap && nearRing;
+  prevHit = !inGap && nearRing;
 }
 
 /* =========================
@@ -167,48 +180,47 @@ function render() {
   if (bgImg) image(bgImg, 0, 0, width, height);
   else background(0);
 
-  fill(0,150);
+  // arka planı hafif karart
+  fill(0, 150);
   noStroke();
-  rect(0,0,width,height);
+  rect(0, 0, width, height);
 
-  translate(width/2, height/2);
+  translate(width / 2, height / 2);
 
-  /* Ring */
+  // Ring
   push();
   rotate(ring.angle);
   noFill();
   stroke(255);
-  strokeWeight(ring.thickness);
-  arc(0,0,ring.radius*2,ring.radius*2,0,TWO_PI*(1-ring.gapRatio));
+  strokeWeight(ring.thickness); // ✅ 5 kalınlık
+  arc(0, 0, ring.radius * 2, ring.radius * 2, 0, TWO_PI * (1 - ring.gapRatio));
   pop();
 
-  /* ✅ TOP YERİNE MOUSE PNG */
+  // ✅ TOP YERİNE MOUSE PNG (boyut yarı: 14px)
   if (cursorImg) {
-    image(cursorImg, ball.x, ball.y, ball.r*3, ball.r*3);
+    const CURSOR_SIZE = 14; // ✅ yarıya düşürülmüş boyut
+    image(cursorImg, ball.x, ball.y, CURSOR_SIZE, CURSOR_SIZE);
   }
 
-  /* HUD */
+  // HUD
   resetMatrix();
   fill(255);
   textSize(20);
-  text(`Score: ${game.score}`,20,40);
-  text(`Lives: ${game.lives}`,20,70);
-  text(`Level: ${game.level}`,20,100);
+  text(`Score: ${game.score}`, 20, 40);
+  text(`Lives: ${game.lives}`, 20, 70);
+  text(`Level: ${game.level}`, 20, 100);
 
   if (state === State.START) {
     textSize(26);
-    text("Click to Start",20,150);
-  }
-  if (state === State.GAMEOVER) {
+    text("Click/Tap to Start", 20, 150);
+  } else if (state === State.GAMEOVER) {
     textSize(28);
-    text("GAME OVER",20,150);
+    text("GAME OVER", 20, 150);
     textSize(20);
-    text("Click to Restart",20,180);
+    text("Click/Tap to Restart", 20, 180);
   }
 }
-
 </script>
 </body>
 </html>
-
 
